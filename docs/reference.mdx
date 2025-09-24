@@ -1,0 +1,173 @@
+# API リファレンス
+
+このドキュメントは `react-native-google-mobile-ads` が提供する主要なクラス、フック、定数、型の一覧と使い方をまとめたリファレンスです。ライブラリのエントリーポイントや各広告クラスのライフサイクル、イベント、設定項目を横断的に確認できます。【F:src/index.ts†L18-L60】
+
+## エントリーポイント
+
+### `mobileAds()`
+
+`mobileAds()` は Google Mobile Ads SDK へのファサードを返すシングルトンです。返されたインスタンスは以下のメソッドを公開します。【F:src/MobileAds.ts†L36-L77】【F:src/types/MobileAdsModule.interface.ts†L9-L74】
+
+- `initialize(): Promise<AdapterStatus[]>` — SDK を初期化し、利用可能なアダプターの状態を解決します。
+- `setRequestConfiguration(requestConfiguration: RequestConfiguration): Promise<void>` — すべてのリクエストに適用されるグローバル設定をバリデーションの上で適用します。無効な設定は例外になります。
+- `openAdInspector(): Promise<void>` — アプリ内で広告インスペクターを開き、クローズまたはエラーで解決／拒否します。
+- `openDebugMenu(adUnit: string): void` — 有効な広告ユニット ID を使ってデバッグメニューを表示します。空文字列は拒否されます。
+- `setAppVolume(volume: number): void` — 0〜1 の範囲でアプリ全体の広告ボリュームを設定します。範囲外は例外になります。
+- `setAppMuted(muted: boolean): void` — アプリ全体の広告ミュート状態を切り替えます。
+
+### `SDK_VERSION`
+
+エクスポートされる `SDK_VERSION` 定数はネイティブ SDK のバージョンを表す文字列で、ランタイムのバージョンチェックに利用できます。【F:src/index.ts†L18-L22】
+
+## リクエスト設定と共通型
+
+### `RequestConfiguration`
+
+`setRequestConfiguration` に渡すオプション。最大広告コンテンツレーティング、COPPA/GDPR 関連のフラグ、テストデバイス ID を指定できます。【F:src/types/RequestConfiguration.ts†L3-L39】
+
+### `RequestOptions`
+
+広告ロード時に個別に指定できる追加パラメーターです。非パーソナライズド広告、キーワード、カスタムターゲティング、サーバーサイド検証オプション、PPID などをサポートします。【F:src/types/RequestOptions.ts†L1-L109】
+
+### `NativeAdRequestOptions`
+
+ネイティブ広告専用の追加設定です。希望するメディアのアスペクト比、AdChoices アイコンの表示位置、動画の開始ミュート設定を調整できます。【F:src/types/NativeAdRequestOptions.ts†L20-L54】
+
+### `AdShowOptions`
+
+`show()` 呼び出し時の追加オプション。Android で没入モードを有効化する `immersiveModeEnabled` をサポートします。【F:src/types/AdShowOptions.ts†L1-L11】
+
+### `AdStates` / `AdHookReturns`
+
+フックが返すステート構造体で、ロード／表示状態、エラー、収益イベント、リワード情報、`load()` / `show()` のコールバックを提供します。【F:src/types/AdStates.ts†L5-L91】
+
+## 広告イベント種別
+
+- `AdEventType` — フルスクリーン広告共通のイベント (`loaded`、`opened`、`paid`、`clicked`、`closed`、`error`) を列挙します。【F:src/AdEventType.ts†L18-L69】
+- `RewardedAdEventType` — リワード広告特有の `rewarded_loaded` と `rewarded_earned_reward` を提供し、報酬情報をハンドラーに渡します。【F:src/RewardedAdEventType.ts†L18-L59】
+- `GAMAdEventType` — Ad Manager 専用の `app_event` 通知を表します。【F:src/GAMAdEventType.ts†L18-L36】
+- `NativeAdEventType` — ネイティブ広告のインプレッション、クリック、動画再生／終了などのイベント種別です。【F:src/NativeAdEventType.ts†L1-L50】
+
+## フルスクリーン広告クラス
+
+### 共通の動作 (`MobileAd` 基底クラス)
+
+`MobileAd` はフルスクリーン広告の基底クラスで、共通のロード／表示制御とイベント購読を実装します。`load()` は重複ロードを防ぎつつネイティブ API を呼び出し、`show()` はロード済みでない場合に例外を投げます。`addAdEventsListener` と `addAdEventListener` はイベント購読を登録し、`removeAllListeners()`、`adUnitId`、`loaded` プロパティも提供します。【F:src/ads/MobileAd.ts†L43-L226】
+
+### `AppOpenAd`
+
+`AppOpenAd.createForAdRequest(adUnitId, requestOptions?)` でインスタンス化し、アプリ起動時広告のロードと表示を行います。イベントは `AdEventType` を利用します。【F:src/ads/AppOpenAd.ts†L27-L61】
+
+### `InterstitialAd`
+
+`InterstitialAd.createForAdRequest` でロードし、`AdEventType` を購読できます。ネイティブモジュール `interstitialLoad` / `interstitialShow` を内部的に使用します。【F:src/ads/InterstitialAd.ts†L66-L121】
+
+### `RewardedAd`
+
+リワード広告は `AdEventType` と `RewardedAdEventType` の双方を扱います。`AdEventType.LOADED` を直接登録しようとすると例外を投げ、代わりに `RewardedAdEventType.LOADED` を使う仕様です。【F:src/ads/RewardedAd.ts†L73-L141】
+
+### `RewardedInterstitialAd`
+
+リワード付きインタースティシャル広告も同様に `RewardedAdEventType` を使用し、`AdEventType.LOADED` をブロックします。【F:src/ads/RewardedInterstitialAd.ts†L73-L143】
+
+### `GAMInterstitialAd`
+
+`InterstitialAd` を継承し、`GAMAdEventType` を含むイベントを購読できる Ad Manager 版です。静的ファクトリーメソッドは親クラスを再利用します。【F:src/ads/GAMInterstitialAd.ts†L8-L44】
+
+### `AdShowOptions`
+
+上記の `show()` メソッドは任意で `AdShowOptions` を受け取り、Android で没入モードを有効化できます。【F:src/ads/MobileAd.ts†L188-L206】【F:src/types/AdShowOptions.ts†L1-L11】
+
+## バナーおよびコンポーネント広告
+
+### `BannerAd`
+
+React コンポーネントとしてバナー広告を表示します。`load()` で手動リロードでき、内部では `BaseAd` コンポーネントを用いてサイズ検証やイベント転送、収益イベントのハンドリングを行います。【F:src/ads/BannerAd.tsx†L25-L36】【F:src/ads/BaseAd.tsx†L33-L183】
+
+### `GAMBannerAd`
+
+Ad Manager 版バナー。`recordManualImpression()` で手動インプレッション計上が可能で、`load()` も提供します。【F:src/ads/GAMBannerAd.tsx†L25-L41】
+
+### バナー関連プロパティ
+
+`BannerAdProps` / `GAMBannerAdProps` ではユニット ID、サイズ、リクエストオプション、インプレッション／収益イベントのリスナー、手動インプレッションの有効化、`onAppEvent` などを指定できます。【F:src/types/BannerAdProps.ts†L38-L183】
+
+### サイズ定義
+
+`BannerAdSize` は標準サイズとアダプティブサイズを列挙し、`GAMBannerAdSize` には流動的な `FLUID` が追加されています。【F:src/BannerAdSize.ts†L19-L74】
+
+### 収益精度
+
+`RevenuePrecisions` 列挙はインプレッションレベル収益イベントの精度（推定・正確・出版社提供・不明）を表します。【F:src/common/constants.ts†L3-L15】
+
+## ネイティブ広告
+
+### `NativeAd`
+
+`NativeAd.createForAdRequest(adUnitId, requestOptions?)` でロードし、広告アセット（広告主、見出し、画像、メディアコンテンツ、追加情報など）を保持します。`addAdEventListener`、`removeAllAdEventListeners()`、`destroy()` を備え、レスポンス ID を使ってネイティブモジュールイベントをルーティングします。【F:src/ads/native-ad/NativeAd.ts†L39-L158】
+
+### `NativeAdView`
+
+`NativeAdView` コンポーネントは `nativeAd` プロップを受け取り、レスポンス ID をネイティブビューへ渡した上で子要素にコンテキストを提供します。【F:src/ads/native-ad/NativeAdView.tsx†L24-L42】
+
+### `NativeMediaView`
+
+`NativeMediaView` は `NativeAsset` ラッパーを通じてメディアアセットを登録し、必要に応じて `resizeMode` と `aspectRatio` を調整します。【F:src/ads/native-ad/NativeMediaView.tsx†L24-L43】
+
+### `NativeAsset` と `NativeAssetType`
+
+`NativeAsset` は子要素をネイティブ広告アセットとして登録し、`NativeAssetType` 列挙（広告主、本文、CTA、アイコン、画像など）を公開します。【F:src/ads/native-ad/NativeAsset.tsx†L24-L65】
+
+### ネイティブ広告のイベント
+
+ネイティブ広告で購読できるイベント種別は `NativeAdEventType` を参照してください（インプレッション、クリック、PAID、動画イベントなど）。【F:src/NativeAdEventType.ts†L1-L50】
+
+## React Hooks
+
+### フルスクリーン広告用フック
+
+- `useAppOpenAd(adUnitId, requestOptions?)`
+- `useInterstitialAd(adUnitId, requestOptions?)`
+- `useRewardedAd(adUnitId, requestOptions?)`
+- `useRewardedInterstitialAd(adUnitId, requestOptions?)`
+
+これらのフックは広告ユニット ID の変更を検知して新しい広告インスタンスを生成し、`useFullScreenAd` を通じて `AdHookReturns` を返します。【F:src/hooks/useAppOpenAd.ts†L33-L45】【F:src/hooks/useInterstitialAd.ts†L33-L45】【F:src/hooks/useRewardedAd.ts†L33-L45】【F:src/hooks/useRewardedInterstitialAd.ts†L33-L46】【F:src/hooks/useFullScreenAd.ts†L41-L109】
+
+### `useForeground`
+
+アプリがバックグラウンドからアクティブに戻った際にコールバックを実行するユーティリティフックです。AppState の変化を購読し、クリーンアップも行います。【F:src/hooks/useForeground.ts†L21-L40】
+
+## コンセント管理 (`AdsConsent`)
+
+`AdsConsent` オブジェクトはユーザーコンセントの取得と状態管理を支援します。【F:src/AdsConsent.ts†L29-L172】
+
+- `requestInfoUpdate(options?)` — デバッグ地理設定やテストデバイス ID を含むリクエストをバリデーションし、最新のコンセント状態を取得します。
+- `showForm()` / `showPrivacyOptionsForm()` — 標準フォームとプライバシーオプションフォームを表示します。
+- `loadAndShowConsentFormIfRequired()` — 必要な場合のみフォームをロードして表示します。
+- `getConsentInfo()` — `AdsConsentInfo` を返します。
+- `gatherConsent(options?)` — 情報更新後に必要ならフォームを表示します。
+- `reset()` — コンセント状態をリセットします。
+- `getTCString()` / `getTCModel()` — IAB TC 文字列やデコード済みモデルを取得します。
+- `getGdprApplies()`、`getPurposeConsents()`、`getPurposeLegitimateInterests()` — GDPR 関連のフラグやマップを取得します。
+- `getUserChoices()` — 目的別の同意状況を IAB モデルから導出します。
+
+### 関連列挙と型
+
+- `AdsConsentDebugGeography` — デバッグ用地域設定（DISABLED / EEA / REGULATED_US_STATE / OTHER）。【F:src/specs/modules/NativeConsentModule.ts†L26-L51】
+- `AdsConsentStatus` — UNKNOWN / REQUIRED / NOT_REQUIRED / OBTAINED。【F:src/specs/modules/NativeConsentModule.ts†L53-L76】
+- `AdsConsentPrivacyOptionsRequirementStatus` — プライバシーオプションが必要かどうか。【F:src/specs/modules/NativeConsentModule.ts†L78-L96】
+- `AdsConsentInfo`、`AdsConsentInfoOptions`、`AdsConsentUserChoices` — コンセント情報の構造体と IAB 由来の選好フラグ群。【F:src/specs/modules/NativeConsentModule.ts†L98-L186】
+- `AdsConsentPurposes` — IAB TCF の 10 個の目的を列挙します（デバイス情報の保存、基本／パーソナライズド広告、コンテンツ、測定、マーケットリサーチ、製品改善など）。【F:src/AdsConsentPurposes.ts†L26-L181】
+- `AdsConsentSpecialFeatures` — 精密な位置情報や端末特性スキャンといった特別機能を列挙します。【F:src/AdsConsentSpecialFeatures.ts†L26-L47】
+
+## その他の定数
+
+- `MaxAdContentRating` — 広告コンテンツの最大レーティング (G/PG/T/MA)。【F:src/MaxAdContentRating.ts†L18-L37】
+- `TestIds` — プラットフォームごとのテスト用広告ユニット ID。AdMob/GAM の両方が含まれます。【F:src/TestIds.ts†L20-L59】
+- `NativeAssetType` — ネイティブ広告で登録可能なアセット種別を列挙します。【F:src/ads/native-ad/NativeAsset.tsx†L24-L34】
+- `RevenuePrecisions` — インプレッション収益イベントの精度を表す列挙型です。【F:src/common/constants.ts†L3-L15】
+
+## 参考: フルスクリーン広告で使用するフックの状態推移
+
+フルスクリーン広告用フックは、`AdEventType` や `RewardedAdEventType` を購読して `isLoaded`、`isOpened`、`isClosed`、`isClicked`、`isEarnedReward`、`revenue` などのフラグを自動更新します。`load()` で状態を初期化し再ロード、`show()` で広告表示をトリガーするのが基本的な流れです。【F:src/hooks/useFullScreenAd.ts†L41-L109】
+
